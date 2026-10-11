@@ -128,3 +128,7 @@ _Costo computacional._ El trabajo total es, en el peor caso, proporcional al pro
 
 Esta irregularidad en el costo por píxel es el origen del desbalance de carga que se analiza más adelante en la sección 3.4
 
+![Figura 1. Conjunto de Mandelbrot](img/figura1_mandelbrot.jpg)
+
+*Figura 1. Conjunto de Mandelbrot (en negro) con el exterior coloreado según la velocidad de escape. Fuente: [AUTOR], Wikimedia Commons*
+
