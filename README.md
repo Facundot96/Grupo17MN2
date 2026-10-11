@@ -132,3 +132,67 @@ Esta irregularidad en el costo por píxel es el origen del desbalance de carga q
 
 *Figura 1. Conjunto de Mandelbrot (en negro) con el exterior coloreado según la velocidad de escape. Fuente: [AUTOR], Wikimedia Commons*
 
+### 3.3 Fundamentos de la computación paralela
+
+_El tiempo de ejecución en un programa paralelo_ es el tiempo total de ejecución de un programa, el cual puede descomponerse como _T = Tproc + Tcom + Tidle_. __Tproc__ es el tiempo de cómputo, que depende de la complejidad y dimensión del problema ,además de las características de las unidades de procesamiento. __Tcom__ s el tiempo de comunicación, que depende de la localidad de procesos y datos, como así también del canal de comunicación. __Tidle__ se el tiempo ocioso, producido por el no determinismo de la ejecución, y es el que obliga a balancear la carga. 
+
+_Speedup y eficiencia_, la manera de saber que tan bueno puede llegar a ser un programa en paralelo se calculo mediante el __speedup__, $S_p = \frac{T_1}{T_p}$, donde T1 es el tiempo de ejecución de un procesador y Tp el tiempo con p procesadores. si $S_P = p$, el speedup es lineal y ello implica que la parte serial es casi nula. La __eficiencia__ es  $E_f = \frac{S_p}{p} = \frac{T_1}{p \cdot T_p}$., y un speedup lineal equivale a una eficiencia del 100%. En la practica lo más habitual es que sea un speedup sublineal (menor al 100%), por problemas con errores de paralelización, un mal balanceo de carga, el costo de la comunicación y de conexión, o por la sincronización. Solo en algunos casos puede verse un speedup superlineal (mayor al 100%). Como la ejecución no es determinística y no se puede evaluar la eficiencia algorítmica de forma teórica, hay que __medir los tiempos__ y por ello se corre múltiples ejecuciones y se usan estadísticas como la mediana.
+
+_Ley de Amdahl_ la parte serial de un programa determina la cota inferior para el tiempo de ejecución, aún cuando se utilicen al máximo las técnicas de paralelismo. Si _P_ es la fracción del programa que se puede paralelizar (_1 - P_ es la fracción serial), el speedup máximo con _N_ procesadores es:
+
+$$
+\text{Speedup} = \frac{1}{(1 - P) + \frac{P}{N}}
+$$
+
+A cosecuencia, por más número de procesadores que se usen, el speedup nunca supera $\frac{1}{1 - P}$. Por ejemplo si el 10% del programa es serial, el speedup no puede pasar de 10.
+
+El _Compromiso entre el paralelismo y overhead_. Lograr un buen rendimiento implica un compromiso entre el grado de paralelismo obtenido y el overhead (la sincronización y la comunicación). Para lograrlo se utilizan técnicas de __scheduling__ y de __balance de carga__. Además, la programación paralela no siempre es la solución y no es fácil obtener resultado óptimos: exige una programación optimizada, el conocimiento sobre el hardware subyacente, mucho tiempo invertido en la programación, lo cual dificulta el debugging y el profiling.
+
+_Los modelos de programación:_ Mucho antes de programar en paralelo se toman decisiones con respecto a tres puntos importantes: El modelo de memoria (compartida o distribuida), cómo se divirá el problema (particionar los datos o funcionalidades) y qué lenguaje se usará (C, C++ o Fortran). En este trabajo se utilizará memoria distribuida, con C y la librería MPI.
+
+El _Message Passing Interface_ (MPI) es una interfaz de pasaje de mensajes pensada principalmente para un modelo de memoria distribuida, y es especialmente eficiente para la descomposición de dominio. Existen varias implementacionse como MPICH y OPENMPI. Su modo de funcionamiento es ejecutar el mismo código (el programa) en múltiples procesos, por lo que se necesita gestionar la comunicación y coordinación entre ellos. Cada proceso se identifica por su rango (rank) dentro de un comunicador, que es el conjunto de procesos que participan (MPI_COMM_WORLD los incluye a todos). 
+
+Estructura de un programa MPI:
+
+```c
+MPI_Init(&argc, &argv);                     // inicializa MPI
+MPI_Comm_rank(MPI_COMM_WORLD, &rango);      // identificador del proceso
+MPI_Comm_size(MPI_COMM_WORLD, &n_procesos); // cantidad de procesos
+/* ... programa paralelo ... */
+MPI_Finalize();                             // finaliza MPI
+```
+
+La comunicación puede ser de dos tipos:
+
+- **Punto a punto:** un proceso envía y otro recibe, identificado por su rango. `MPI_Send` y `MPI_Recv` son *bloqueantes*, y `MPI_Isend` e `MPI_Irecv`, seguidos de `MPI_Wait`, son *no bloqueantes*. Un mal orden de los envíos y recepciones puede provocar un **deadlock**, es decir, procesos que quedan esperándose mutuamente.
+- **Colectiva:** participan todos los procesos de un comunicador. Las operaciones son bloqueantes, no usan etiquetas (*tags*) y los buffers que reciben deben ser exactamente del mismo tamaño. Las principales son `MPI_Barrier` (sincronizar), `MPI_Bcast` (*broadcast*), `MPI_Scatter` y `MPI_Gather`, y las reducciones globales `MPI_Reduce` y `MPI_Allreduce`. Estas últimas permiten realizar cómputos sobre datos distribuidos en un grupo de procesos (máximo o mínimo global, suma o producto global), y `MPI_Allreduce` es la variante sin proceso raíz.
+
+Para comunicar datos debe haber una equivalencia entre los tipos de datos de MPI y los de C:
+
+| Tipo MPI | Tipo C |
+|---|---|
+| `MPI_CHAR` | `signed char` |
+| `MPI_SHORT` | `signed short int` |
+| `MPI_INT` | `signed int` |
+| `MPI_LONG` | `signed long int` |
+| `MPI_UNSIGNED_CHAR` | `unsigned char` |
+| `MPI_UNSIGNED_SHORT` | `unsigned short int` |
+| `MPI_UNSIGNED` | `unsigned int` |
+| `MPI_UNSIGNED_LONG` | `unsigned long int` |
+| `MPI_FLOAT` | `float` |
+| `MPI_DOUBLE` | `double` |
+| `MPI_LONG_DOUBLE` | `long double` |
+
+Los tiempos se miden con `MPI_Wtime`.
+
+### 3.4 Balance de carga y estrategias de distribución
+
+El __balance de carga__ (__scheduling__) es el proceso de asignar recursos a tareas para que el cómputo global resulte eficiente. En el conjunto de Mandelbrot las tareas son independientes (un punto, una fila o un bloque de ellas) y no se conoce de antemano cuánto tardará cada una, porque el costo depende de la cantidad de iteraciones que necesita cada punto en particular para escapar. Por ellos la forma de repartir el trabajo entre los processos determina cuánto tiempo ocioso (definido como _Tidle_) aparece y, con él, el speedup global.
+
+La _granularidad_ , un grano es una secuencia de pasos computacionales que se ejecuta de manera secuencial en el procesador. Si el grano es pequeño se lo conoce como granularidad fina, de lo contrario, como granularidad gruesa. Hay un compromiso: la granularidad gruesa implica poco overhead de comunicación, pero puede limitar la cantidad de paralelismo, mientras que la fina favorece al paralelismo pero puede producir un overhead de comunicación excesiva. En Mandelbrot, la unidad de trabajo puede ser un píxel, la fila o un bloque de filas.
+
+#### Distribución estática
+
+En la distribución __estática__ la decisión de qué proceso calcula cada punto se fija de antemano, antes de ejecutar el programa. Hay dos extremnos en granularidad:
+
+1. __Bloques contiguos:__ 
