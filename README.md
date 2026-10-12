@@ -25,7 +25,7 @@
    - [3.3. Fundamentos de la computación paralela](#33-fundamentos-de-la-computación-paralela)
    - [3.4. Balance de carga y estrategias de distribución](#34-balance-de-carga-y-estrategias-de-distribución)
 4. [Metodología](#4-metodología)
-
+4. [Implementación](#5-implementación)
 ---
 
 ## 1. Introducción
@@ -323,3 +323,48 @@ __Métricas:__ con las medianas se pueden calcular:
 En la estrategia dinámica, el maestro no calcula píxeles, por lo que `D` se calcula solo sobre los `p − 1` trabajadores. Por la misma razón, el speedup máximo alcanzable en esa estrategia está por debajo de `p`, y se lo tiene en cuenta al interpretar la eficiencia.
 
 __Validación.__ En cada ejecución se verifica que la matriz de iteraciones obtenida coincida con la de la versión serial. Una ejecución cuyo resultado difiera se descarta y se corrige el programa.
+
+## 5. Implementación
+
+Para la implementación se usaron las herramientas vistas en clase, C con MPI para la comunicación entre procesos. El proyecto consta de 4 versiones del generador de Mandelbrot: una secuencial de referencia y tres paralelas con MPI. Todas utilizan la misma función para realizar el cálculo, región del plano complejo, resolución y límite de iteraciones. Nos centramos en que la diferencia principal sea cómo se distribuyen los píxeles entre los procesos.
+
+### 5.1 Versión secuencial
+
+La versión secuencial recorre todas las filas y columnas usando solo un proceso, para cada píxel se determina el punto del plano correspondiente y se calcula el número de iteraciones que le corresponde.
+
+Esta versión se va a usar como referencia para comparar con los resultados de las implementaciones paralelas, vamos a tomar el tiempo que demore como el tiempo base para calcular el speedup. Su medición comprende el cálculo de la matriz completa, excluyendo la escritura de la imagen.
+
+### 5.2 Versión estática por bloques
+
+La imagen se divide en bloques de filas consecutivas, asignados antes de comenzar el cálculo. Todos los procesos, incluido P0, calculan una parte de la imagen.
+
+Cada proceso determina los límites de su bloque utilizando su identificador y la cantidad total de procesos. Al finalizar, envía sus resultados a P0, que reúne la matriz completa.
+
+De esta forma se distribuye cantidades similares de píxeles, pero puede generar desbalance cuando algunos bloques contienen puntos que requieren muchas más iteraciones que otros.
+
+### 5.3 Versión estática cíclica
+
+Las filas se reparten por turnos entre los procesos. El proceso de identificador `rank` calcula las filas `rank`, `rank + p`, `rank + 2p`, y así sucesivamente, donde `p` es la cantidad de procesos.
+
+Todos los procesos calculan y posteriormente reúnen sus resultados en P0.
+
+Al repartir filas de distintas zonas de la imagen, esta estrategia puede mezclar trabajo de diferente costo y reducir el desbalance respecto de los bloques consecutivos. Su efectividad se evalúa mediante las mediciones.
+
+### 5.4 Versión dinámica maestro-trabajador
+
+P0 actúa como maestro y los demás procesos como trabajadores. El maestro asigna bloques de filas y entrega una nueva tarea a cada trabajador cuando recibe su resultado anterior.
+
+La asignación se realiza durante la ejecución: los trabajadores que terminan antes pueden recibir más tareas. Con `p` procesos totales hay `p−1` trabajadores, porque el maestro no calcula píxeles.
+
+El tamaño de tarea controla el compromiso entre balance y comunicación. Las tareas pequeñas permiten un reparto más flexible, pero generan más mensajes; las grandes reducen la comunicación y pueden aumentar el desbalance.
+
+### 5.5 Comparación de las versiones
+
+| Versión | Asignación del trabajo | Procesos que calculan | Comunicación de resultados |
+|---|---|---|---|
+| Secuencial | Todas las filas en un proceso | Uno | No requiere MPI |
+| Estática por bloques | Intervalos consecutivos definidos al inicio | Todos | Reunión en P0 |
+| Estática cíclica | Filas intercaladas definidas al inicio | Todos | Reunión en P0 |
+| Dinámica | Bloques asignados durante la ejecución | Todos excepto el maestro | Entrega de resultados y nuevas tareas |
+
+La comparación estudia el tiempo global, el speedup, la eficiencia y el balance de trabajo. El intervalo medido debe incluir el cálculo y la comunicación necesaria para reunir la matriz completa, excluyendo la generación del archivo de imagen.
