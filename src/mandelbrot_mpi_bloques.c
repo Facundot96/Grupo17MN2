@@ -94,8 +94,13 @@ int main(int argc, char **argv)
 
     if (rank == 0)
     {
-        printf("Tiempo con %d procesos: %.6f segundos\n",
-               procesos, tiempo_total);
+        printf("Tiempo con %d procesos: %.6f segundos\n", procesos, tiempo_total);
+
+        if (escribir_iteraciones("resultados/bloques_iter.txt",
+                                ancho, alto, &imagen[0][0]) != 0)
+        {
+            error_archivo = 1;
+        }
 
         colormap_func_t paleta = select_colormap("hot");
 

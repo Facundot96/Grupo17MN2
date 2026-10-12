@@ -5,16 +5,9 @@
 #include <stdlib.h>
 #include <math.h>
 
-//valores por defecto de la región del plano complejo
-#define DEFAULT_X_MIN -2.5
-#define DEFAULT_X_MAX  1.5
-#define DEFAULT_Y_MIN -1.5
-#define DEFAULT_Y_MAX  1.5
+#include "config.h"
 
 //valores por defetco de la imagen y las iteraciones
-#define DEFAULT_WIDTH        1024
-#define DEFAULT_HEIGHT       1024
-#define DEFAULT_MAX_ITER     1000
 #define DEFAULT_FILAS_BLOQUE    8
 
 // límite de divergencia, si |z|^2 supera el valor, la sucesión escapa
@@ -40,8 +33,8 @@ typedef struct {
 //valores por defecto de la configuración
 static inline Config config_default(void) {
     Config cfg;
-    cfg.width           = DEFAULT_WIDTH;
-    cfg.height          = DEFAULT_HEIGHT;
+    cfg.width  = DEFAULT_ANCHO;
+    cfg.height = DEFAULT_ALTO;
     cfg.max_iter        = DEFAULT_MAX_ITER;
     cfg.filas_bloque    = DEFAULT_FILAS_BLOQUE;
     cfg.region.x_min    = DEFAULT_X_MIN;
@@ -69,7 +62,7 @@ static inline int mandelbrot_iteraciones(double cr, double ci, int max_iter) {
 
         if(zr2 + zi2 > RADIO_DE_ESCAPE_CUADRADO) {
             // si llega a ser mayor al radio de escape devuelve la iteracion a la que llegó
-            return i; 
+            return i + 1; 
         }
     }
     return max_iter;
@@ -79,14 +72,21 @@ static inline int mandelbrot_iteraciones(double cr, double ci, int max_iter) {
  * Calcula una fila completa del fractal y la guarda en el buffer out.
  * out debe tener espacio para cfg->width enteros.
  */
-static inline void calcular_fila(const Config *cfg, int fila, int *out) {
-    double ci = cfg->region.y_min +
-                fila * (cfg->region.y_max - cfg->region.y_min) / (cfg->height - 1);
-    double dx = (cfg->region.x_max - cfg->region.x_min) / (cfg->width - 1);
+static inline void calcular_fila(const Config *cfg, int fila, int *out)
+{
+    double paso_a =
+        (cfg->region.x_max - cfg->region.x_min) / (cfg->width - 1);
 
-    for (int i = 0; i < cfg->width; ++i) {
-        double cr = cfg->region.x_min + i * dx;
-        out[i] = mandelbrot_iteraciones(cr, ci, cfg->max_iter);
+    double paso_b =
+        (cfg->region.y_max - cfg->region.y_min) / (cfg->height - 1);
+
+    double ci = cfg->region.y_max - fila * paso_b;
+
+    for (int col = 0; col < cfg->width; col++)
+    {
+        double cr = cfg->region.x_min + col * paso_a;
+
+        out[col] = mandelbrot_iteraciones(cr, ci, cfg->max_iter);
     }
 }
 
@@ -146,6 +146,39 @@ static inline int escribir_ppm(const char *nombre, const Config *cfg,
     }
     fclose(fp);
     return 0;
+}
+
+static inline int escribir_iteraciones(const char *nombre, int ancho, int alto, const int *imagen)
+{
+    FILE *archivo = fopen(nombre, "w");
+
+    if (archivo == NULL)
+    {
+        perror("No se pudo crear el archivo de iteraciones");
+        return -1;
+    }
+
+    fprintf(archivo, "%d %d\n", ancho, alto);
+
+    for (int fila = 0; fila < alto; fila++)
+    {
+        for (int col = 0; col < ancho; col++)
+        {
+            fprintf(archivo, "%d ",
+                    imagen[(size_t)fila * ancho + col]);
+        }
+
+        fprintf(archivo, "\n");
+    }
+
+    int error = ferror(archivo);
+
+    if (fclose(archivo) != 0)
+    {
+        error = 1;
+    }
+
+    return error ? -1 : 0;
 }
 
 #endif

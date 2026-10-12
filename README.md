@@ -298,7 +298,7 @@ Los valores de `p` se incluyen teniendo en cuenta el número de núcleos físico
 | A. Comparación de estrategias | Medir el speedup de E1, E2 y E3 y su relación con el balance de carga | Estrategia, región, `p` | `k` de E3 |
 | B. Granularidad | Estudiar el efecto del tamaño del paquete en E3 | `k`, región (R1 y R4) | Un valor de `p` por sistema |
 
-El valor de `k` que se usa en el experimento A se elige a partir de los resultados del experimento B, y los valores de `p` del experimento B se definen a partir del A.
+Primero se fija un número de procesos por sistema para realizar el experimento B. A partir de sus resultados se selecciona el tamaño de tarea que se utilizará en el experimento A.
 
 **Criterios comunes a todas las pruebas**
 - Todas las versiones se compilan con las mismas opciones de optimización (`-O2`) y se verifica que el resultado coincida con el de la versión serial.
@@ -308,21 +308,31 @@ El valor de `k` que se usa en el experimento A se elige a partir de los resultad
 
 ### 4.4 Medición
 
-__Tiempos:__ Los tiempos se miden con `MPI_Wtime`, que devuelve el tiempo de reloj en segundos. En cada ejecución se mide el cálculo de la imagen completa, escritura de resultados a disco. Para que todos los procesos empiecen a medir al mismo tiempo se coloca un `MPI_Barrier` antes de iniciar el cronómetro. Cada proceso registra su propio __tiempo de cómputo__ (`Tproc`), o sea, el tiempo que pasa calculado píxeles, sin contar el tiempo de comunicación y espera.
+**Tiempos.** Los tiempos paralelos se miden con `MPI_Wtime`. Antes de iniciar la medición, cada proceso prepara sus parámetros y reserva la memoria necesaria. Luego se ejecuta `MPI_Barrier` para establecer un punto común de partida.
 
-El tiempo paralelo en una ejecución, `Tp`, es el __mayor__ de los tiempos medidos entre todos los procesos, ya que el programa termina cuando termine el último proceso de computar. Se obtiene con `MPI_Reduce`y la operación `MPI_MAX`. El tiempo de procesamiento serial `T1`se mide con la versión sin MPI del mismo procedimiento.
+El intervalo medido incluye el cálculo, la asignación de tareas y la comunicación necesaria para reunir la matriz completa en P0. Se excluyen la preparación de memoria, la impresión, la conversión a colores, la escritura de archivos y la validación.
 
-__Repeticiones y cálculos estadísticos__ Cada configuración del problema se ejecuta 6 veces, descartando la primera ejecución de calentamiento. Como los tiempos de una misma configuración varían entre corridas, se reporta __la mediana__ de las repeticiones, tanto para `T1` como para `Tp` junto con el mínimo y el máximo para poder dar una idea de la dispersión. Esto es esencial en el cluster, donde otros usuarios pueden estar haciendo uso del nodo, como en WSL que el anfitrión puede interferir.
+Cada proceso obtiene su duración utilizando su propio reloj. El tiempo paralelo `Tp` se obtiene como el máximo de esas duraciones mediante `MPI_Reduce` con `MPI_MAX`. La reducción de tiempos queda fuera del intervalo medido.
 
-__Métricas:__ con las medianas se pueden calcular:
+El tiempo secuencial `T1` corresponde al cálculo de la matriz completa en la versión secuencial de referencia, excluyendo igualmente preparación y escritura.
 
-* __Speedup:__ `Sp = T1/Tp`, donde la `T1` es la mediana del tiempo en la versión serial y `Tp` la mediana del tiempo paralelo con `p` procesos.
-* __Eficiencia:__ `Ef = Sp/p`. El speedup lineal (`Sp = p`) equivale a una eficiencia del 100%
-* __Desbalance de carga:__ `D = Tproc_max / Tproc_medio`, calculado a partir de los tiempos de cómputo de los procesos que calculan. Un valor de 1 indica balance perfecto, y un valor mayor indica que el proceso más cargado trabajó `D` veces más que el promedio. Se interpreta como un indicador del tiempo ocioso (`Tidle`) de los demás procesos.
+**Repeticiones.** Cada configuración se ejecuta seis veces: una ejecución de calentamiento que se descarta y cinco ejecuciones medidas. Se conservan los tiempos originales y se informa la mediana, junto con el mínimo y el máximo.
 
-En la estrategia dinámica, el maestro no calcula píxeles, por lo que `D` se calcula solo sobre los `p − 1` trabajadores. Por la misma razón, el speedup máximo alcanzable en esa estrategia está por debajo de `p`, y se lo tiene en cuenta al interpretar la eficiencia.
+**Métricas.**
 
-__Validación.__ En cada ejecución se verifica que la matriz de iteraciones obtenida coincida con la de la versión serial. Una ejecución cuyo resultado difiera se descarta y se corrige el programa.
+- **Speedup:** `Sp = T1 / Tp`, utilizando las medianas de los tiempos secuenciales y paralelos de la misma configuración y sistema.
+- **Eficiencia:** `Ef = Sp / p`, donde `p` es la cantidad total de procesos utilizados, incluido el maestro de la versión dinámica.
+- **Desbalance de trabajo:** `D_iter = W_max / W_promedio`, donde `W` es la suma de iteraciones realizadas por cada proceso que calcula píxeles.
+
+Un valor de `D_iter = 1` indica igual cantidad de iteraciones por proceso. Valores mayores indican que el proceso más cargado realizó más iteraciones que el promedio. Esta métrica representa trabajo computacional, no tiempo: la comunicación y las características del hardware también afectan al rendimiento.
+
+En las versiones estáticas, el desbalance se calcula sobre los `p` procesos. En la dinámica se calcula sobre los `p−1` trabajadores, ya que P0 solo coordina. El máximo y el promedio se obtienen de los contadores de cada ejecución.
+
+**Validación.** Fuera del intervalo medido, P0 puede guardar la matriz de iteraciones en un archivo de texto mediante `escribir_iteraciones`. Los archivos se comparan con `cmp`, que comprueba que todos los contadores estén en las mismas posiciones.
+
+La validación se realiza en ejecuciones específicas, antes de aceptar las mediciones de una configuración. La igualdad de imágenes coloreadas o de sumas totales de iteraciones no reemplaza la comparación de matrices.
+
+Hasta el momento se comprobó la igualdad de las matrices de bloques, cíclico y dinámica para R1, resolución 2000×2000, `max_iter = 1000` y cuatro procesos. Queda pendiente compararlas con la versión secuencial de referencia.
 
 ## 5. Implementación
 
@@ -368,3 +378,5 @@ El tamaño de tarea controla el compromiso entre balance y comunicación. Las ta
 | Dinámica | Bloques asignados durante la ejecución | Todos excepto el maestro | Entrega de resultados y nuevas tareas |
 
 La comparación estudia el tiempo global, el speedup, la eficiencia y el balance de trabajo. El intervalo medido debe incluir el cálculo y la comunicación necesaria para reunir la matriz completa, excluyendo la generación del archivo de imagen.
+
+Todas las versiones paralelas registran la cantidad de iteraciones realizada por cada proceso que calcula. Estos contadores permiten analizar el balance de trabajo. La generación de imágenes y la exportación de matrices para validación se realizan fuera del intervalo medido.
