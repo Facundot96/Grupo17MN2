@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include "mandelbrot.h"
 #include "timer.h"
 #include "colormap.h"
@@ -32,7 +33,7 @@ static int leer_argumentos(int argc, char **argv, Config *cfg) {
     if (argc > 3) cfg->max_iter    = atoi(argv[3]);
     if (argc > 4) cfg->filas_bloque = atoi(argv[4]);
 
-    if (cfg->width <= 0 || cfg->height <= 0 || cfg->max_iter <= 0 ||
+    if (cfg->width <= 1 || cfg->height <= 1 || cfg->max_iter <= 0 ||
         cfg->filas_bloque <= 0) {
         return -1;
     }
@@ -86,8 +87,8 @@ int main(int argc, char **argv) {
     MPI_Bcast(&cfg, sizeof(Config), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     double t_inicio, t_fin;
-    MPI_Barrier(MPI_COMM_WORLD);
-    t_inicio = timer_now();
+    double tiempo_local;
+    double tiempo_total = 0.0;
 
     if (rango == 0) {
         /* ---------- MAESTRO ---------- */
@@ -114,8 +115,10 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Maestro: error de memoria.\n");
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
+        MPI_Barrier(MPI_COMM_WORLD);
+        t_inicio = timer_now();
 
-        /* ---------- BUVLE PRINCIPAL ---------- 
+        /* ---------- BUCLE PRINCIPAL ---------- 
          * Bucle principal: mientras haya trabajadores activos,
          * recibir pedidos o resultados y asignar nuevas tareas.
          */
@@ -159,13 +162,24 @@ int main(int argc, char **argv) {
         }
         //se mide el tiempo y se procede a imprimirlo, guardar la imagen y liberar la memoria
         t_fin = timer_now();
+        tiempo_local = timer_transcurrido(t_inicio, t_fin);
 
+        MPI_Reduce(&tiempo_local, &tiempo_total,
+                1, MPI_DOUBLE, MPI_MAX,
+                0, MPI_COMM_WORLD);
+
+        if (escribir_iteraciones("resultados/dinamico_iter.txt",
+                                cfg.width, cfg.height, imagen) != 0)
+        {
+            fprintf(stderr, "Error al guardar las iteraciones\n");
+        }
+        
         printf("Mandelbrot paralelo - maestro/trabajador\n");
         printf("Procesos: %d, Resolucion: %d x %d, max_iter: %d, "
                "tarea: %d filas\n",
                n_procesos, cfg.width, cfg.height, cfg.max_iter,
                cfg.filas_bloque);
-        printf("Tiempo: %.6f segundos\n", timer_transcurrido(t_inicio, t_fin));
+        printf("Tiempo: %.6f segundos\n", tiempo_total);
 
         char nombre[128];
         snprintf(nombre, sizeof(nombre), "mandelbrot_dinamico_%dx%d_%s.ppm",
@@ -192,6 +206,10 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Trabajador %d: error de memoria.\n", rango);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
+        long long trabajo = 0;
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        t_inicio = timer_now();
 
         // pedir primera tarea
         int dummy = 0;
@@ -212,6 +230,14 @@ int main(int argc, char **argv) {
             // recibe la configuración, las filas a calcular y las procesa
             procesar_bloque(&cfg, fila_inicio, nfilas, local);
 
+            for (int j = 0; j < nfilas; j++)
+            {
+                for (int col = 0; col < cfg.width; col++)
+                {
+                    trabajo += local[j * cfg.width + col];
+                }
+            }
+
             /* Enviar resultado y pedir siguiente tarea. */
             sendbuf[0] = fila_inicio;
             sendbuf[1] = nfilas;
@@ -226,6 +252,15 @@ int main(int argc, char **argv) {
             MPI_Send(sendbuf, 2 + nfilas * cfg.width, MPI_INT, 0,
                      TAG_RESULTADO, MPI_COMM_WORLD);
         }
+
+        t_fin = timer_now();
+        tiempo_local = timer_transcurrido(t_inicio, t_fin);
+
+        MPI_Reduce(&tiempo_local, &tiempo_total,
+                1, MPI_DOUBLE, MPI_MAX,
+                0, MPI_COMM_WORLD);
+
+        printf("Trabajador %d: %lld iteraciones\n", rango, trabajo);
 
         free(local);
         free(sendbuf);
