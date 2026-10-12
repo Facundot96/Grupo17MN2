@@ -92,50 +92,53 @@ int main(int argc, char **argv)
     if (rank == 0)
     {
         printf("Tiempo con %d procesos: %.6f segundos\n", procesos, tiempo_total);
-
-        if (escribir_iteraciones("resultados/ciclico_iter.txt",
-                                ancho, alto, &imagen[0][0]) != 0)
+        
+        if (GENERAR_SALIDAS)
         {
-            error_archivo = 1;
-        }
-
-        colormap_func_t paleta = select_colormap("hot");
-
-        FILE *archivo =
-            fopen("resultados/mandelbrot_ciclico.ppm", "w");
-
-        if (archivo == NULL)
-        {
-            perror("No se pudo crear la imagen");
-            error_archivo = 1;
-        }
-        else
-        {
-            fprintf(archivo, "P3\n%d %d\n255\n", ancho, alto);
-
-            for (int fila = 0; fila < alto; fila++)
+            if (escribir_iteraciones("resultados/ciclico_iter.txt",
+                                    ancho, alto, &imagen[0][0]) != 0)
             {
-                for (int col = 0; col < ancho; col++)
-                {
-                    int iter = imagen[fila][col];
-                    int inside_color = (iter == max_iter);
-
-                    unsigned char r, g, b;
-                    paleta(iter, max_iter, &r, &g, &b, inside_color);
-
-                    fprintf(archivo, "%u %u %u ",
-                            (unsigned int)r,
-                            (unsigned int)g,
-                            (unsigned int)b);
-                }
-
-                fprintf(archivo, "\n");
+                error_archivo = 1;
             }
 
-            if (fclose(archivo) != 0)
+            colormap_func_t paleta = select_colormap("hot");
+
+            FILE *archivo =
+                fopen("resultados/mandelbrot_ciclico.ppm", "w");
+
+            if (archivo == NULL)
             {
-                perror("No se pudo terminar de guardar la imagen");
+                perror("No se pudo crear la imagen");
                 error_archivo = 1;
+            }
+            else
+            {
+                fprintf(archivo, "P3\n%d %d\n255\n", ancho, alto);
+
+                for (int fila = 0; fila < alto; fila++)
+                {
+                    for (int col = 0; col < ancho; col++)
+                    {
+                        int iter = imagen[fila][col];
+                        int inside_color = (iter == max_iter);
+
+                        unsigned char r, g, b;
+                        paleta(iter, max_iter, &r, &g, &b, inside_color);
+
+                        fprintf(archivo, "%u %u %u ",
+                                (unsigned int)r,
+                                (unsigned int)g,
+                                (unsigned int)b);
+                    }
+
+                    fprintf(archivo, "\n");
+                }
+
+                if (fclose(archivo) != 0)
+                {
+                    perror("No se pudo terminar de guardar la imagen");
+                    error_archivo = 1;
+                }
             }
         }
     }

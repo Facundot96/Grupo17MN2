@@ -40,4 +40,8 @@
 #error "REGION_ACTIVA debe estar entre 1 y 4"
 #endif
 
+#ifndef GENERAR_SALIDAS
+#define GENERAR_SALIDAS 1
+#endif
+
 #endif

@@ -64,50 +64,51 @@ int main(void)
     printf("Tiempo secuencial: %.6f segundos\n", tiempo_total);
 
     int error_archivo = 0;
-
-    if (escribir_iteraciones("resultados/secuencial_iter.txt",
-                             ancho, alto, &imagen[0][0]) != 0)
+    if (GENERAR_SALIDAS)
     {
-        fprintf(stderr, "Error al guardar las iteraciones\n");
-        error_archivo = 1;
-    }
-
-    colormap_func_t paleta = select_colormap("hot");
-
-    FILE *archivo = fopen("resultados/mandelbrot_secuencial.ppm", "w");
-
-    if (archivo == NULL)
-    {
-        perror("No se pudo crear la imagen");
-        error_archivo = 1;
-    }
-    else
-    {
-        fprintf(archivo, "P3\n%d %d\n255\n", ancho, alto);
-
-        for (int fila = 0; fila < alto; fila++)
+        if (escribir_iteraciones("resultados/secuencial_iter.txt", ancho, alto, &imagen[0][0]) != 0)
         {
-            for (int col = 0; col < ancho; col++)
-            {
-                int iter = imagen[fila][col];
-                int inside_color = (iter == max_iter);
-
-                unsigned char r, g, b;
-                paleta(iter, max_iter, &r, &g, &b, inside_color);
-
-                fprintf(archivo, "%u %u %u ",
-                        (unsigned int)r,
-                        (unsigned int)g,
-                        (unsigned int)b);
-            }
-
-            fprintf(archivo, "\n");
+            fprintf(stderr, "Error al guardar las iteraciones\n");
+            error_archivo = 1;
         }
 
-        if (fclose(archivo) != 0)
+        colormap_func_t paleta = select_colormap("hot");
+
+        FILE *archivo = fopen("resultados/mandelbrot_secuencial.ppm", "w");
+
+        if (archivo == NULL)
         {
-            perror("No se pudo terminar de guardar la imagen");
+            perror("No se pudo crear la imagen");
             error_archivo = 1;
+        }
+        else
+        {
+            fprintf(archivo, "P3\n%d %d\n255\n", ancho, alto);
+
+            for (int fila = 0; fila < alto; fila++)
+            {
+                for (int col = 0; col < ancho; col++)
+                {
+                    int iter = imagen[fila][col];
+                    int inside_color = (iter == max_iter);
+
+                    unsigned char r, g, b;
+                    paleta(iter, max_iter, &r, &g, &b, inside_color);
+
+                    fprintf(archivo, "%u %u %u ",
+                            (unsigned int)r,
+                            (unsigned int)g,
+                            (unsigned int)b);
+                }
+
+                fprintf(archivo, "\n");
+            }
+
+            if (fclose(archivo) != 0)
+            {
+                perror("No se pudo terminar de guardar la imagen");
+                error_archivo = 1;
+            }
         }
     }
 
