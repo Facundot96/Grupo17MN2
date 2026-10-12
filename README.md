@@ -24,6 +24,7 @@
    - [3.2. Conjunto de Mandelbrot](#32-conjunto-de-mandelbrot)
    - [3.3. Fundamentos de la computación paralela](#33-fundamentos-de-la-computación-paralela)
    - [3.4. Balance de carga y estrategias de distribución](#34-balance-de-carga-y-estrategias-de-distribución)
+4. [Metodología](#4-metodología)
 
 ---
 
@@ -195,4 +196,130 @@ La _granularidad_ , un grano es una secuencia de pasos computacionales que se ej
 
 En la distribución __estática__ la decisión de qué proceso calcula cada punto se fija de antemano, antes de ejecutar el programa. Hay dos extremnos en granularidad:
 
-1. __Bloques contiguos:__ 
+1. __Bloques contiguos:__ La imagen se divide en _p_ partes iguales y cada proceso calcula la suya (por ejemplo, 5000 filas entre 5 procesos, 1000 filas cada uno). La comunicación ocurre al final, cuando cada proceso envía su submatriz al proceso raíz. El problema es que esa comunicación no se solapa con el cómputo, y que se reparte la misma cantidad de filas sin considerar su costo. En el caso particular de Mandelbrot, algunas filas contiene muchos más puntos del conjunto que otras por lo que eeste reparto produce un mal balance.
+2. __Píxel por píxel:__ el píxel (_i_,_j_) de una matriz de _n x n_ lo calcula el proceso  `(i·n + j) mod p`.La comunicación queda totalmente entrelazada con el cómputo. Como cada píxel cuesta pocas iteraciones en el mejor caso, los procesos pueden pasar casi por todo el tiempo enviando y recibiendo, en lugar de realizar calculos.
+
+Como compromiso entre ambos extremos, se reparte el trabajo por __filas intercaladas__ (cíclico o _round-robin_): la fila _i_ le corresponde al proceso `i mod p`. Para Mandelbrot se espera que funcione bien, ya que las filas costosas quedan repartidas entre los procesos, pero no existe garantía de un buen balance en general: para cualquier forma fija de asignar tareas existen distribuciones de tamaños de tarea que dan un mal balance. En el peor caso de la asignación estática, todas las tareas largas terminan en un mismo proceso y las cortas en otro.
+
+#### Distribución dinámica: esquema maestro-trabajador
+
+En la distribución _dinámica_, el trabajo se asigna durante la ejecución. En este esquema _maestro-trabajador_, un proceso (el maestro) administra la cola de tareas y los demás (los trabajadores) las calculan. El funcionamiento se distribuye de la siguiente manera:
+
+1. El maestro envía una tarea a cada trabajador.
+2. cuando un trabajador termina, envía su resultado al maestro y queda a la espera.
+3. Si todavía quedan tareas, el maestro le envía la siguiente al trabajador que acaba de terminar. Si no quedan, envía una señal para terminar.
+
+De esta manera, los procesos más rápidos reciben más tareas, y se logra un buen balance sin necesidad de conocer de antemano el tamaño de cada una. En un esquema simple de implementar, incluso con una infraestructura de comunicación rudimentaria. Requiere pasaje de mensajes entre el maestro y los trabajadores por lo que el maestro debe poder atender al trabajador que termine su tarea primero.
+
+Sin embargo este esquema consta de _limitaciones_, este funciona bien con un número considerable de procesadores, pero no escala a muchos, por lo que un único maestro puede convertirse en cuello de botella. Si el tamaño promedio de tareas no es mucho mayor que el costo de comunicación multiplicada por el número de procesos, el overhead de arranque limita el rendimiento. Una forma de mitigar este problema es entregando paquetes de varias tareas a la vez, lo que introduce un compromiso: paquetes grandes producen el overhead pero aumentan el desbalance, porque el último paquete puede dejar a un proceso trabajando de más.
+
+En el caso de _Mandelbrot_, entregar píxeles individuales no es escalable, sobre todo si gran parte de la región queda fuera del conjunto y la mayoría de los puntos escapa en pocas iteraciones. Por eso conviene agrupar las tareas en paquetes, lo cual no consta de demasiada complejidad ya que un rango de filas se puede describir de forma compacta.
+
+El __tamaño del paquete__ (la granularidad) es entonces el parámetro central de la estrategia dinámica y su elección condiciona tanto el balance como el costo de la comunicación.
+
+## 4. Metodología
+
+### 4.1 Sistemas de prueba
+
+Las pruebas se ejecutan en dos sistemas de características muy distintas: una computadora personal y un cluster.
+
+| | PC personal | Cluster |
+|---|---|---|
+| **CPU** | Intel Core i7-8700 @ 3,20 GHz | AMD EPYC 7B12 |
+| **Núcleos / hilos** | 6 / 12 (2 hilos por núcleo, 1 socket) | hasta 96 núcleos |
+| **RAM** | 24 GB | hasta 384 GB |
+| **Entorno de ejecución** | WSL 2 | Linux |
+| **Sistema operativo** | Ubuntu 26.04 LTS | Ubuntu |
+| **Implementación de MPI** | Open MPI 5.0.10 | Open MPI 4.1.6 |
+| **Nodos** | 1 | 8 (la sesión usa 1) |
+
+Los programas se compilan con `mpicc` y se ejecutan con `mpirun -n <nro_procesos>`. Cuando el número de procesos supera la cantidad de núcleos disponibles se usa la opción `--oversubscribe`.
+
+### 4.2 Datos de prueba
+
+El problema no requiere de datos externos, sino que la entrada se genera a partir de 3 parámetros que definen cada caso de prueba.
+
+* __Región del plano complejo:__ la ventana `[Re_min, Re_max] × [Im_min, Im_max]` en la que se grafica.
+* __Resolución:__ La cantidad de píxeles, dados por `ancho × alto`.
+* __Número máximo de iteraciones:__ el `max_iter` del programa.
+
+A cada píxel `(px, py)` le corresponde el punto medio del píxel, es decir, el valor `c = x0 + i·y0` con
+
+```
+x0 = Re_min + (px + 0,5) · (Re_max − Re_min) / ancho
+y0 = Im_min + (py + 0,5) · (Im_max − Im_min) / alto
+```
+
+La salida es una matriz con la cantidad de iteraciones de escape de cada píxel. Para validar la implementación, el resultado de cada versión paralela se compara con el de la versión serial, y debe ser idéntico para cualquier número de procesos.
+
+**Regiones de prueba.** Como el desbalance depende de la zona que se grafica, se eligen cuatro regiones con características de carga distintas:
+
+| Región | Ventana (Re × Im) | Carga esperada |
+|---|---|---|
+| R1. Vista completa | [−2,00; 0,47] × [−1,12; 1,12] | Mixta: exterior, frontera e interior |
+| R2. Exterior | [0,30; 0,90] × [−0,30; 0,30] | Baja y casi uniforme: todos los puntos divergen rápido |
+| R3. Interior | [−0,15; 0,15] × [−0,15; 0,15] | Máxima y uniforme: todos los puntos alcanzan `max_iter` |
+| R4. Frontera (valle de los caballitos de mar) | [−0,78; −0,72] × [0,07; 0,13] | Alta e irregular: zona de la frontera con costo muy variable |
+
+R1 es la ventana estándar que contiene a todo el conjunto. R2 y R3 sirven como casos de control, en ambas la carga es pareja entre pixeles por lo que no debería producirse un desbalance, y permiten aislar el efecto del costo de comunicación. R4 es una región de frontera, centrada en el punto -0.75 + 0.1i (conocida como "El valle de los caballitos de mar"), y se espera que sea la más desbalanceada.
+
+**Resoluciones.** Se utilizan imágenes cuadradas de 1000 × 1000, 2000 × 2000 y 4000 × 4000 píxeles. El número de filas se elige de modo que, para algunas cantidades de procesos, no sea múltiplo de ellos, para verificar que el reparto maneja correctamente las filas sobrantes.
+
+**Máximo de iteraciones.** Se parte de `max_iter = 1000`, y se lo varía en la sección de experimentación para observar su efecto sobre el costo y el desbalance.
+
+### 4.3 Parámetros de prueba
+
+Cada ejecución queda definida por la combinación de los siguientes parámetros.
+
+| Estrategia | Descripción |
+|---|---|
+| Serial | Versión sin MPI. Es la referencia para calcular T1 y validar los resultados. |
+| Estática por bloques | Cada proceso calcula un bloque de filas contiguas. Las filas sobrantes se reparten entre los primeros procesos. |
+| Estática cíclica por filas | La fila `i` la calcula el proceso `i mod p`. |
+| Dinámica (maestro-trabajador) | El proceso 0 reparte paquetes de filas a pedido y recolecta los resultados. |
+
+Para ello variaremos los siguientes parámetros del problema:
+
+* __Región del plano:__ vistas en la sección anterior
+
+- **Número de procesos (`p`):**
+  - PC personal: 2, 4 y 6
+  - Cluster: 2, 4, 6, 32 y 64
+- **Tamaño del paquete (`k`)** en la estrategia dinámica: cantidad de filas que el maestro entrega por pedido (1, 4, 16 y 64).
+
+Los valores de `p` se incluyen teniendo en cuenta el número de núcleos físicos de cada sistema (6 en la PC y hasta 64 en el cluster) y el de hilos (12 y 96), para observar qué ocurre al superar los núcleos físicos. En la estrategia dinámica, `p` es la cantidad total de procesos lanzados, incluyendo al maestro, por lo que los trabajadores son `p-1`. Se usa este criterio para que todas las estrategias se comparen con la misma cantidad de procesos lanzados.
+
+**Parámetros fijos.** Resolución de 2000 × 2000 píxeles y `max_iter` = 1000 en todas las pruebas.
+
+**Experimentos**
+
+| Experimento | Objetivo | Se varía | Se mantiene fijo |
+|---|---|---|---|
+| A. Comparación de estrategias | Medir el speedup de E1, E2 y E3 y su relación con el balance de carga | Estrategia, región, `p` | `k` de E3 |
+| B. Granularidad | Estudiar el efecto del tamaño del paquete en E3 | `k`, región (R1 y R4) | Un valor de `p` por sistema |
+
+El valor de `k` que se usa en el experimento A se elige a partir de los resultados del experimento B, y los valores de `p` del experimento B se definen a partir del A.
+
+**Criterios comunes a todas las pruebas**
+- Todas las versiones se compilan con las mismas opciones de optimización (`-O2`) y se verifica que el resultado coincida con el de la versión serial.
+- El tiempo de referencia T1 es el de la **versión serial**, no el de la versión paralela con un proceso, porque el esquema maestro-trabajador necesita al menos dos procesos.
+- Cada configuración se ejecuta varias veces (sección 4.4) y se trabaja con la mediana.
+- En el cluster, todas las pruebas se realizan dentro de un único nodo, por lo que la comunicación entre procesos es por memoria compartida.
+
+### 4.4 Medición
+
+__Tiempos:__ Los tiempos se miden con `MPI_Wtime`, que devuelve el tiempo de reloj en segundos. En cada ejecución se mide el cálculo de la imagen completa, escritura de resultados a disco. Para que todos los procesos empiecen a medir al mismo tiempo se coloca un `MPI_Barrier` antes de iniciar el cronómetro. Cada proceso registra su propio __tiempo de cómputo__ (`Tproc`), o sea, el tiempo que pasa calculado píxeles, sin contar el tiempo de comunicación y espera.
+
+El tiempo paralelo en una ejecución, `Tp`, es el __mayor__ de los tiempos medidos entre todos los procesos, ya que el programa termina cuando termine el último proceso de computar. Se obtiene con `MPI_Reduce`y la operación `MPI_MAX`. El tiempo de procesamiento serial `T1`se mide con la versión sin MPI del mismo procedimiento.
+
+__Repeticiones y cálculos estadísticos__ Cada configuración del problema se ejecuta 6 veces, descartando la primera ejecución de calentamiento. Como los tiempos de una misma configuración varían entre corridas, se reporta __la mediana__ de las repeticiones, tanto para `T1` como para `Tp` junto con el mínimo y el máximo para poder dar una idea de la dispersión. Esto es esencial en el cluster, donde otros usuarios pueden estar haciendo uso del nodo, como en WSL que el anfitrión puede interferir.
+
+__Métricas:__ con las medianas se pueden calcular:
+
+* __Speedup:__ `Sp = T1/Tp`, donde la `T1` es la mediana del tiempo en la versión serial y `Tp` la mediana del tiempo paralelo con `p` procesos.
+* __Eficiencia:__ `Ef = Sp/p`. El speedup lineal (`Sp = p`) equivale a una eficiencia del 100%
+* __Desbalance de carga:__ `D = Tproc_max / Tproc_medio`, calculado a partir de los tiempos de cómputo de los procesos que calculan. Un valor de 1 indica balance perfecto, y un valor mayor indica que el proceso más cargado trabajó `D` veces más que el promedio. Se interpreta como un indicador del tiempo ocioso (`Tidle`) de los demás procesos.
+
+En la estrategia dinámica, el maestro no calcula píxeles, por lo que `D` se calcula solo sobre los `p − 1` trabajadores. Por la misma razón, el speedup máximo alcanzable en esa estrategia está por debajo de `p`, y se lo tiene en cuenta al interpretar la eficiencia.
+
+__Validación.__ En cada ejecución se verifica que la matriz de iteraciones obtenida coincida con la de la versión serial. Una ejecución cuyo resultado difiera se descarta y se corrige el programa.
