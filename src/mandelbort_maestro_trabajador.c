@@ -168,12 +168,6 @@ int main(int argc, char **argv) {
                 1, MPI_DOUBLE, MPI_MAX,
                 0, MPI_COMM_WORLD);
 
-        if (escribir_iteraciones("resultados/dinamico_iter.txt",
-                                cfg.width, cfg.height, imagen) != 0)
-        {
-            fprintf(stderr, "Error al guardar las iteraciones\n");
-        }
-        
         printf("Mandelbrot paralelo - maestro/trabajador\n");
         printf("Procesos: %d, Resolucion: %d x %d, max_iter: %d, "
                "tarea: %d filas\n",
@@ -181,13 +175,20 @@ int main(int argc, char **argv) {
                cfg.filas_bloque);
         printf("Tiempo: %.6f segundos\n", tiempo_total);
 
-        char nombre[128];
-        snprintf(nombre, sizeof(nombre), "mandelbrot_dinamico_%dx%d_%s.ppm",
-                 cfg.width, cfg.height, nombre_paleta);
-        if (escribir_ppm(nombre, &cfg, imagen, paleta) == 0) {
-            printf("Imagen guardada en %s\n", nombre);
-        }
+        if (GENERAR_SALIDAS)
+        {
+            if (escribir_iteraciones("resultados/dinamico_iter.txt", cfg.width, cfg.height, imagen) != 0)
+            {
+                fprintf(stderr, "Error al guardar las iteraciones\n");
+            }
 
+            char nombre[128];
+            snprintf(nombre, sizeof(nombre), "mandelbrot_dinamico_%dx%d_%s.ppm",
+                    cfg.width, cfg.height, nombre_paleta);
+            if (escribir_ppm(nombre, &cfg, imagen, paleta) == 0) {
+                printf("Imagen guardada en %s\n", nombre);
+            }
+        }
         free(imagen);
         free(recvbuf);
 
