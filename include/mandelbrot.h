@@ -76,6 +76,21 @@ static inline int mandelbrot_iteraciones(double cr, double ci, int max_iter) {
 }
 
 /*
+ * Calcula una fila completa del fractal y la guarda en el buffer out.
+ * out debe tener espacio para cfg->width enteros.
+ */
+static inline void calcular_fila(const Config *cfg, int fila, int *out) {
+    double ci = cfg->region.y_min +
+                fila * (cfg->region.y_max - cfg->region.y_min) / (cfg->height - 1);
+    double dx = (cfg->region.x_max - cfg->region.x_min) / (cfg->width - 1);
+
+    for (int i = 0; i < cfg->width; ++i) {
+        double cr = cfg->region.x_min + i * dx;
+        out[i] = mandelbrot_iteraciones(cr, ci, cfg->max_iter);
+    }
+}
+
+/*
  * Escribe una imagen en formato PGM (escala de grises) a partir de un
  * buffer de iteraciones. Los puntos que pertenecen al conjunto se pintan
  * de negro y los demás en escala de grises proporcional a las iteraciones.
