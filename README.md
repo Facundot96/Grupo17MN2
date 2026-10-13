@@ -25,7 +25,11 @@
    - [3.3. Fundamentos de la computación paralela](#33-fundamentos-de-la-computación-paralela)
    - [3.4. Balance de carga y estrategias de distribución](#34-balance-de-carga-y-estrategias-de-distribución)
 4. [Metodología](#4-metodología)
-4. [Implementación](#5-implementación)
+5. [Implementación](#5-implementación)
+6. [6. Experimentación y resultados](#6-experimentación-y-resultados)
+7. [7. Análisis y discusión](#7-análisis-y-discusión)
+8. [8. Conclusiones y mejoras propuestas](#8-conclusiones-y-mejoras-propuestas)
+
 ---
 
 ## 1. Introducción
@@ -380,3 +384,283 @@ El tamaño de tarea controla el compromiso entre balance y comunicación. Las ta
 La comparación estudia el tiempo global, el speedup, la eficiencia y el balance de trabajo. El intervalo medido debe incluir el cálculo y la comunicación necesaria para reunir la matriz completa, excluyendo la generación del archivo de imagen.
 
 Todas las versiones paralelas registran la cantidad de iteraciones realizada por cada proceso que calcula. Estos contadores permiten analizar el balance de trabajo. La generación de imágenes y la exportación de matrices para validación se realizan fuera del intervalo medido.
+
+## 6. Experimentación y resultados
+
+Los resultados corresponden a la PC de escritorio (i7-8700, 6 núcleos
+físicos), con resolución 2000×2000 y max_iter = 1000. Cada valor es la
+mediana de 5 ejecuciones (se realizaron 6 y se descartó la primera). El
+speedup se calcula contra el tiempo del programa serial medido con el
+mismo procedimiento. Todas las ejecuciones superaron la validación (PASS).
+
+### 6.1 Referencia serial
+
+**Tabla 6.1 – Programa serial.**
+
+| Región | Iteraciones totales | Iter./píxel | % de max_iter | T1 PC (s) | ns/iter. PC | T1 cluster (s) | ns/iter. cluster |
+|---|---|---|---|---|---|---|---|
+| R1 | 1.116.281.093 | 279,1 | 27,9 % | 3,448 | 3,09 | 3,358 | 3,01 |
+| R2 | 421.025.186 | 105,3 | 10,5 % | 1,294 | 3,07 | 1,260 | 2,99 |
+| R3 | 4.000.000.000 | 1000,0 | 100,0 % | 12,427 | 3,11 | 12,050 | 3,01 |
+| R4 | 2.376.927.604 | 594,2 | 59,4 % | 7,376 | 3,10 | 7,147 | 3,01 |
+
+El tiempo es proporcional al número de iteraciones (≈ 3 ns por iteración en
+ambos sistemas). R3 es la única región en la que todos los píxeles alcanzan
+max_iter, por lo que su carga es uniforme.
+
+### 6.2 Resultados en la PC
+
+#### 6.2.1 Distribución estática
+
+**Tabla 6.2 – Bloques y cíclico (PC).**
+
+| Región | p | Bloques Tp (s) | S | E | Cíclico Tp (s) | S | E |
+|---|---|---|---|---|---|---|---|
+| R1 | 2 | 1,756 | 1,963 | 0,982 | 1,753 | 1,967 | 0,984 |
+| R1 | 4 | 1,561 | 2,209 | 0,552 | 0,898 | 3,838 | 0,960 |
+| R1 | 6 | 1,195 | 2,886 | 0,481 | 0,614 | 5,616 | 0,936 |
+| R2 | 2 | 0,660 | 1,959 | 0,980 | 0,659 | 1,962 | 0,981 |
+| R2 | 4 | 0,446 | 2,898 | 0,725 | 0,346 | 3,743 | 0,936 |
+| R2 | 6 | 0,314 | 4,117 | 0,686 | 0,242 | 5,342 | 0,890 |
+| R3 | 2 | 6,254 | 1,987 | 0,994 | 6,274 | 1,981 | 0,991 |
+| R3 | 4 | 3,204 | 3,879 | 0,970 | 3,190 | 3,896 | 0,974 |
+| R3 | 6 | 2,151 | 5,777 | 0,963 | 2,168 | 5,731 | 0,955 |
+| R4 | 2 | 4,496 | 1,640 | 0,820 | 3,750 | 1,967 | 0,984 |
+| R4 | 4 | 2,437 | 3,026 | 0,756 | 1,903 | 3,875 | 0,969 |
+| R4 | 6 | 1,676 | 4,401 | 0,734 | 1,295 | 5,695 | 0,949 |
+
+Con p = 2, ambas estrategias alcanzan una eficiencia de 0,98–0,99 en R1, R2 y
+R3; en R4 los bloques llegan a 0,820 y el cíclico a 0,984. Con p = 6, la
+eficiencia de bloques es de 0,481 (R1), 0,686 (R2), 0,963 (R3) y 0,734 (R4),
+mientras que la del cíclico se mantiene entre 0,890 y 0,955.
+
+#### 6.2.2 Distribución dinámica
+
+**Tabla 6.3 – Speedup de la estrategia dinámica según el tamaño de paquete k
+(PC).**
+
+| Región | p | k = 1 | k = 4 | k = 16 | k = 64 |
+|---|---|---|---|---|---|
+| R1 | 2 | 0,954 | 0,957 | 0,959 | 0,958 |
+| R1 | 4 | 2,808 | 2,831 | 2,818 | 2,813 |
+| R1 | 6 | 4,612 | 4,628 | 4,619 | 4,358 |
+| R2 | 2 | 0,949 | 0,952 | 0,953 | 0,954 |
+| R2 | 4 | 2,795 | 2,813 | 2,776 | 2,758 |
+| R2 | 6 | 4,585 | 4,594 | 4,581 | 4,432 |
+| R3 | 2 | 0,960 | 0,964 | 0,964 | 0,964 |
+| R3 | 4 | 2,839 | 2,838 | 2,826 | 2,700 |
+| R3 | 6 | 4,657 | 4,651 | 4,663 | 4,197 |
+| R4 | 2 | 0,957 | 0,958 | 0,961 | 0,963 |
+| R4 | 4 | 2,829 | 2,821 | 2,801 | 2,718 |
+| R4 | 6 | 4,632 | 4,642 | 4,625 | 4,225 |
+
+Con p = 2 hay un único trabajador y el speedup es 0,95–0,96. Con p = 6 se
+obtiene 4,58–4,66 con k ≤ 16 y desciende a 4,20–4,43 con k = 64.
+
+#### 6.2.3 Comparación de las estrategias
+
+**Tabla 6.4 – Speedup de las tres estrategias (dinámica con k = 16, PC).**
+
+| Región | p | Bloques | Cíclico | Dinámico |
+|---|---|---|---|---|
+| R1 | 4 | 2,209 | 3,838 | 2,818 |
+| R1 | 6 | 2,886 | 5,616 | 4,619 |
+| R2 | 4 | 2,898 | 3,743 | 2,776 |
+| R2 | 6 | 4,117 | 5,342 | 4,581 |
+| R3 | 4 | 3,879 | 3,896 | 2,826 |
+| R3 | 6 | 5,777 | 5,731 | 4,663 |
+| R4 | 4 | 3,026 | 3,875 | 2,801 |
+| R4 | 6 | 4,401 | 5,695 | 4,625 |
+
+Con p = 6, el cíclico logra el mayor speedup en R1, R2 y R4 (5,616, 5,342 y
+5,695). En R3, bloques y cíclico son prácticamente iguales (5,777 y 5,731).
+
+### 6.3 Resultados en el cluster
+
+#### 6.3.1 Distribución estática
+
+**Tabla 6.5 – Bloques y cíclico (cluster).**
+
+| Región | p | Bloques Tp (s) | S | E | Cíclico Tp (s) | S | E |
+|---|---|---|---|---|---|---|---|
+| R1 | 2 | 1,638 | 2,050 | 1,025 | 1,682 | 1,997 | 0,998 |
+| R1 | 4 | 1,470 | 2,284 | 0,571 | 0,850 | 3,950 | 0,987 |
+| R1 | 6 | 1,115 | 3,013 | 0,502 | 0,575 | 5,845 | 0,974 |
+| R2 | 2 | 0,615 | 2,050 | 1,025 | 0,631 | 1,996 | 0,998 |
+| R2 | 4 | 0,412 | 3,056 | 0,764 | 0,323 | 3,905 | 0,976 |
+| R2 | 6 | 0,289 | 4,360 | 0,727 | 0,220 | 5,734 | 0,956 |
+| R3 | 2 | 5,932 | 2,031 | 1,016 | 6,041 | 1,995 | 0,997 |
+| R3 | 4 | 2,986 | 4,036 | 1,009 | 3,029 | 3,978 | 0,994 |
+| R3 | 6 | 1,997 | 6,034 | 1,006 | 2,030 | 5,937 | 0,990 |
+| R4 | 2 | 4,229 | 1,690 | 0,845 | 3,592 | 1,989 | 0,995 |
+| R4 | 4 | 2,275 | 3,141 | 0,785 | 1,805 | 3,959 | 0,990 |
+| R4 | 6 | 1,554 | 4,598 | 0,766 | 1,213 | 5,891 | 0,982 |
+
+Con p = 2, la eficiencia es de aproximadamente 1 en ambas estrategias, salvo
+bloques en R4 (0,845). Con p = 6, bloques alcanza 0,502 (R1), 0,727 (R2),
+1,006 (R3) y 0,766 (R4), y el cíclico entre 0,956 y 0,990.
+
+#### 6.3.2 Distribución dinámica
+
+**Tabla 6.6 – Speedup de la estrategia dinámica según k (cluster).**
+
+| Región | p | k = 1 | k = 4 | k = 16 | k = 64 |
+|---|---|---|---|---|---|
+| R1 | 2 | 0,968 | 0,968 | 0,968 | 0,967 |
+| R1 | 4 | 2,888 | 2,891 | 2,894 | 2,885 |
+| R1 | 6 | 4,796 | 4,811 | 4,812 | 4,529 |
+| R2 | 2 | 0,968 | 0,969 | 0,969 | 0,969 |
+| R2 | 4 | 2,874 | 2,878 | 2,856 | 2,835 |
+| R2 | 6 | 4,755 | 4,763 | 4,735 | 4,631 |
+| R3 | 2 | 0,968 | 0,968 | 0,968 | 0,968 |
+| R3 | 4 | 2,900 | 2,889 | 2,881 | 2,749 |
+| R3 | 6 | 4,808 | 4,799 | 4,785 | 4,312 |
+| R4 | 2 | 0,962 | 0,962 | 0,963 | 0,966 |
+| R4 | 4 | 2,887 | 2,883 | 2,863 | 2,762 |
+| R4 | 6 | 4,781 | 4,785 | 4,734 | 4,314 |
+
+Con p = 2 el speedup es 0,96–0,97. Con p = 6 se obtiene 4,73–4,81 con k ≤ 16 y
+4,31–4,63 con k = 64.
+
+#### 6.3.3 Comparación de las estrategias
+
+**Tabla 6.7 – Speedup de las tres estrategias (dinámica con k = 16, cluster).**
+
+| Región | p | Bloques | Cíclico | Dinámico |
+|---|---|---|---|---|
+| R1 | 4 | 2,284 | 3,950 | 2,894 |
+| R1 | 6 | 3,013 | 5,845 | 4,812 |
+| R2 | 4 | 3,056 | 3,905 | 2,856 |
+| R2 | 6 | 4,360 | 5,734 | 4,735 |
+| R3 | 4 | 4,036 | 3,978 | 2,881 |
+| R3 | 6 | 6,034 | 5,937 | 4,785 |
+| R4 | 4 | 3,141 | 3,959 | 2,863 |
+| R4 | 6 | 4,598 | 5,891 | 4,734 |
+
+Con p = 6, el cíclico logra el mayor speedup en R1, R2 y R4 (5,845, 5,734 y
+5,891). En R3, bloques (6,034) y cíclico (5,937) son prácticamente iguales.
+
+### 6.4 Desbalance de carga medido
+
+Para cada ejecución del cluster se registró la cantidad de iteraciones
+procesada por cada proceso (la impresa por cada uno al finalizar). Con ellas se
+calculó el desbalance D = (iteraciones del proceso más cargado) / (iteraciones
+medias por proceso). D = 1 indica un reparto perfecto. En la estrategia
+dinámica se consideran únicamente los trabajadores. Para las estrategias
+estáticas, D depende solo de la región, de p y de cómo se reparten las filas,
+por lo que es igual en ambos sistemas.
+
+**Tabla 6.8 – Desbalance D de las estrategias estáticas.**
+
+| Región | p | D bloques | D cíclico |
+|---|---|---|---|
+| R1 | 2 | 1,000 | 1,000 |
+| R1 | 4 | 1,778 | 1,000 |
+| R1 | 6 | 2,020 | 1,000 |
+| R2 | 2 | 1,000 | 1,000 |
+| R2 | 4 | 1,318 | 1,000 |
+| R2 | 6 | 1,357 | 1,002 |
+| R3 | 2 | 1,000 | 1,000 |
+| R3 | 4 | 1,000 | 1,000 |
+| R3 | 6 | 1,002 | 1,002 |
+| R4 | 2 | 1,209 | 1,000 |
+| R4 | 4 | 1,300 | 1,001 |
+| R4 | 6 | 1,329 | 1,002 |
+
+**Tabla 6.9 – Desbalance D de la estrategia dinámica según k.**
+
+| Región | p | k = 1 | k = 4 | k = 16 | k = 64 |
+|---|---|---|---|---|---|
+| R1 | 4 | 1,001 | 1,004 | 1,000 | 1,003 |
+| R1 | 6 | 1,002 | 1,004 | 1,006 | 1,064 |
+| R2 | 4 | 1,003 | 1,002 | 1,014 | 1,017 |
+| R2 | 6 | 1,006 | 1,002 | 1,013 | 1,040 |
+| R3 | 4 | 1,002 | 1,002 | 1,008 | 1,056 |
+| R3 | 6 | 1,002 | 1,010 | 1,000 | 1,120 |
+| R4 | 4 | 1,001 | 1,004 | 1,010 | 1,046 |
+| R4 | 6 | 1,002 | 1,003 | 1,012 | 1,114 |
+
+Los bloques presentan un desbalance de hasta 2,020 (R1, p = 6), mientras que el
+cíclico se mantiene en D ≤ 1,002. En la dinámica, D es menor o igual a 1,014
+con k ≤ 16 y llega a 1,120 con k = 64.
+
+## 7. Análisis y discusión
+
+El tiempo del programa serial es proporcional al número de iteraciones (≈ 3 ns por iteración), por lo que el costo de cada proceso depende de los píxeles que recibe, los exteriores se escapan en pocas iteraciones, mientras que los interiores o de frontera consumen hasta las max_iter, R3, que esta completamente dentro del conjunto, tiene carga uniforme y funciona como un caso de control.
+
+Con el modelo T=Tproc+Tcom+Tidle, el tiempo paralelo lo fija el proceso más cargado, de modo que Sp ≈ p/D y Ef ≈ 1/D, donde D es el cociente entre las iteraciones del proceso más cargado y la media.
+
+**Tabla 7.1 – Speedup de bloques con p = 6: predicho (p/D) y medido (cluster).**
+
+| Región | D | S = p/D | S medido | Diferencia |
+|---|---|---|---|---|
+| R1 | 2,020 | 2,971 | 3,013 | +1,4 % |
+| R2 | 1,357 | 4,420 | 4,360 | −1,4 % |
+| R3 | 1,002 | 5,988 | 6,034 | +0,8 % |
+| R4 | 1,329 | 4,514 | 4,598 | +1,9 % |
+
+con p=4 las diferencias son de hasta 2,1%, por lo tanto casi toda la perdida de los bloques se explica por el reparto desigual. en R1 con p=6 el proceso más cargado recibe el doble de la media y la mitad de la capacidad queda ociosa (E=0.50 en el cluster y 0.48 en la PC). La forma de la región indica cuándo aparece el problema, en R1 es simétrica respecto del eje real, de tal modo que con p=2 los dos bloques quedan balanceados (D=1.0) y el desbalance surge con p>=4. En R4 no es simétrica y ya lo presenta con p=2 (D=1.21).
+
+### 7.2 Distribución cíclica
+
+El reparto cíclico reduce el desbalance a prácticamente cero (D<= 1.002 en todos los casos), porque el costo varía de manera suave entre filas vecinas y cada proceso recibe una muestra de toda la imagen. La eficiencia queda en 0.956 - 0.992 en el cluster y 0.89 - 0.955 en la PC con p=6. La pérdida restante no es de balance sino del costo de reunir las filas en el proceso 0 y de MPI, que pesa más en corridas cortas (R2 con p=6 dura aproximadamente 0.22seg).
+
+### 7.3 Distribución dinámica
+
+La estrategia maestro-trabajador también equilibra bien (D<=1.014 con k<= 16) pero su speedup es menor que el del cíclico por dos motivos. El maestro no calcula, por lo que el speedup máx es de p-1, su eficiencia máx es de 0.83 con p=6, con 0.79-0.80 en el cluster y 0.76-0.78 en la PC. Además cada trabajador rinde entre un 95% y 97%, con un único trabajador (p=2) el programa es 4% más lentro que el serial, un sobrecosto proporcional al cómputo e independiente de k, por lo que no proviene de los mensajes entre los procesos.
+
+Entre k=1 y k=16 no se presentan diferencias apreciables, todas menores al 1%, con k=64 hay solo 32 paquetes para 5 trabajadores, uno de ellos procesa 7 contra una media de 6.4 y en R3 el desbalance llega a D=1.12, bajando el speedup un 9.9%. Una granularidad gruesa reintroduce el desbalance que la estrategia debería evitar.
+
+### 7.4 Comparación de las estrategias
+
+**Tabla 7.2 – Eficiencia con p = 6 (dinámica con k = 16).**
+
+| Región | Sistema | Bloques | Cíclico | Dinámico |
+|---|---|---|---|---|
+| R1 | PC | 0,481 | 0,936 | 0,770 |
+| R1 | Cluster | 0,502 | 0,974 | 0,802 |
+| R2 | PC | 0,686 | 0,890 | 0,764 |
+| R2 | Cluster | 0,727 | 0,956 | 0,789 |
+| R3 | PC | 0,963 | 0,955 | 0,777 |
+| R3 | Cluster | 1,006 | 0,990 | 0,797 |
+| R4 | PC | 0,734 | 0,949 | 0,771 |
+| R4 | Cluster | 0,766 | 0,982 | 0,789 |
+
+Podemos apreciar que el cíclico es la mejor estrategia en R1, R2 y R4. En R3 donde no se produce un desbalance, bloques y cíclico son equivalentes. La dinámica es peor, porque paga el núcleo del maestro sin tener algún beneficio, esta solo supera a bloques cuando el desbalance en grande, en R1 con p= 4 y 6, y en R2 y R4 con p=6. En R1 con p=6 en cluster el speedup es de 3.01 con bloques, 4.81 la dinámica y 5.85 con la cíclica, sobre un ideal de 6.
+
+### 7.5 Comparación entre la PC y el cluster
+
+Ambos sistemas muestran las mismas tendencias y el mismo orden de estrategias. El cluster tiene menos pérdida no atribuible al balance, esto podría llegar a deverse ya que la PC ejecuta MPI sobre WSL.
+
+### 7.6 Limitaciones
+
+Los tiempos son medianas de 5 ejecuciones y presentan una variabilidad de ≈ ±3 % con p=1, programas que realizan el mismo trabajo difieren hasta 2.7% de la referencia serial, por lo que tener eficiencias ligeramente mayores a 1 no indican superlinealidad. Se midió hasta 6 procesos, con una sola resolución y con un solo max_iter.
+
+## 8. Conclusiones
+
+### 8.1 Conclusiones
+
+1. El debalance de carga determina el speedup, el costo por píxel no es uniforme y con bloques contiguos, el proceso más cargado llega a recibir el doble de la media (R1, p=6, D=2.02) la eficiencia cae a 0.50. El speedup medido coincide con p/D con una diferencia menor al 2.1%, en R3 sin desbalance los mismos programas alcanzan 0.96.
+2. La distribución cíclica elimina el desbalance sin comunicaciones extra (D <= 1.002) y es la mejor estrategia en R1, R2 y R4, con eficiencias de 0.89 a 0.99.
+3. La distribución dinámica también equilibra la carga (D <= 1.014 con k<=16) pero no supera a la cíclica en este problema. El maestro al no calcular limita su eficiencia máxima y los trabajadores rinden 95-97%. Supera a bloques cuando estos estan muy desbalanceados. Un paquete demasiado grande (k=64) reintroduce el desbalance.
+4. La diferencia es muy grande en el mismo hardware, con R1 con p=6 en el cluster el S=3.01 con bloques y S=5.85 con la cíclica, estamos hablando de casi el doble.
+
+### 8.2 Mejoras propuestas
+
+
+- **Más escala:** más procesos, varios nodos, otras resoluciones y valores de
+  max_iter, y registrar Tproc, Tcom y Tidle de cada proceso junto con la
+  dispersión de las repeticiones.
+- **Mejor balance estático:** repartir bloques contiguos de igual costo
+  estimado (con una pasada previa a baja resolución), o repartir cíclicamente
+  grupos de filas para mejorar la localidad de memoria.
+- **Dinámica más eficiente:** paquetes de tamaño decreciente, al menos unos 10
+  paquetes por trabajador (con k = 16 hay 25 y D ≤ 1,014; con k = 64, 6,4 y
+  D = 1,12), un maestro que también calcule y la revisión del sobrecosto del
+  cálculo de filas.
+- **Menos comunicaciones:** enviar cada bloque en un único mensaje o usar
+  `MPI_Gather` en lugar de un `MPI_Send` por fila, y comunicación no bloqueante
+  (`MPI_Isend`/`MPI_Irecv`) para ocultar la latencia.
+- **Mejoras del algoritmo y del esquema:** aprovechar la simetría respecto del eje
+  real (R1 y R3), evitar el cómputo de puntos interiores conocidos (cardioide y
+  bulbo principal) y un esquema híbrido MPI + OpenMP.
